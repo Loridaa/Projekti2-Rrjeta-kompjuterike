@@ -83,10 +83,27 @@ void cmd_info(const char *filename, char *output, size_t outsz){
     char mtime_buf[64], ctime_buf[64];
     strftime(mtime_buf, sizeof(mtime_buf), "%Y-%m-%d %H:%M:%S", localtime(&st.st_mtime));
     strftime(ctime_buf, sizeof(ctime_buf), "%Y-%m-%d %H:%M:%S", localtime(&st.st_ctime));
-    snprintf(output,outz,
+    snprintf(output,outsz,
     "emri:                %s\n"
     "madhesia:            %ld bytes\n"
     "modifikuar:          %s\n"
     "metadata ndryshuar:  %s",
     filename, (long)st.st_size, mtime_buf, ctime_buf);
+}
+
+void cmd_upload(const char *filename, const char *content, char *output, size_t outsz){
+    mkdir("server_files", 0755);
+    char path[300];
+    snprintf(path, sizeof(path), "server_files/%s", filename);
+    FILE *f = fopen(path, "w");
+    if(!f){
+        strncpy(output,"[gabum] nuk u ruajt dot file.", outsz - 1);
+        output[outsz - 1] = '\0';
+        return;
+    }
+
+    fprintf(f, "%s", content);
+    fclose(f);
+    strncpy(output, "[ok] file u ngarkua me sukses.", outsz - 1);
+    output[outsz - 1] = '\0';
 }
