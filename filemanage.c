@@ -37,3 +37,12 @@ void cmd_read(const char *filename, char *output, size_t outsz){
     output[n] = '\0';
     fclose(f);
 }
+
+void cmd_delete(const char *filename, char *output, size_t outsz){
+    char path[300];
+    snprintf(path, sizeof(path), "server_files/%s", filename);
+    if(remove(path) == 0)
+    strncpy(output, "[ok] file u fshi.",outsz - 1);
+    elsestrncpy(output, "[gabim] nuk u fshi dot file.", outsz - 1);
+    output[outsz - 1] = '\0';
+}
