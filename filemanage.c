@@ -107,3 +107,21 @@ void cmd_upload(const char *filename, const char *content, char *output, size_t 
     strncpy(output, "[ok] file u ngarkua me sukses.", outsz - 1);
     output[outsz - 1] = '\0';
 }
+
+void cmd_download(const char *filename, char *output, size_t outsz){
+    char path[300];
+    snprintf(path, sizeof(path), "server_files/%s", filename);
+    FILE *f = fopen(path, "r");
+    if (!f){
+        strncpy(output, "[gabim] file nuk u gjet.", outsz - 1);
+        output[outsz - 1] = '\0';
+        return;
+    }
+
+    char content[BUFFER_SIZE - 300];
+    size_t n = fread(content, 1, sizeof(content) - 1, f);
+    content[n] = '\0';
+    fclose(f);
+    snprintf(output, outsz, "FILE_DATA:%s:%s", filename,content);
+    
+}
