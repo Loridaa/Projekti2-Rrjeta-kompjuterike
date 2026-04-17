@@ -60,3 +60,96 @@ void komunikimi_baze(int sockfd, struct sockaddr_in servaddr, char *mesazhi) {
         printf("[serveri]: %s\n", buffer);
     }
 }
+
+
+void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin) {
+    char line[1024];
+    char *full_request = malloc(BUFFER_SIZE);
+    if (!full_request) { printf("[gabim] malloc deshtoi\n"); return; }
+
+    while (1) {
+        printf("\nmenu [%s]\n", isAdmin ? "admin" : "user");
+        printf("komanda (/help per ndihme): ");
+
+        if (fgets(line, sizeof(line), stdin) == NULL) break;
+        line[strcspn(line, "\n")] = '\0';
+
+        if (strlen(line) == 0) continue;
+
+        if (strcmp(line, "/exit") == 0) break;
+
+        if (strcmp(line, "/help") == 0) {
+            printf("\nkomandat e disponueshme:\n");
+            printf("  /list                listoji file-t ne server\n");
+            printf("  /read   <filename>   lexo permbajtjen e nje file-i\n");
+            printf("  /search <fjala>      kerko file sipas emrit\n");
+            printf("  /info   <filename>   shfaq madhesine dhe datat e file-it\n");
+            if (isAdmin) {
+                printf("  /upload   <filename> dergo nje file ne server\n");
+                printf("  /download <filename> shkarko nje file nga serveri\n");
+                printf("  /delete   <filename> fshi nje file ne server\n");
+            }
+            printf("  /exit                shkepute nga serveri\n");
+            continue;
+        }
+
+      
+        int is_write_cmd = (strncmp(line, "/delete",   7) == 0 ||
+                            strncmp(line, "/upload",   7) == 0 ||
+                            strncmp(line, "/download", 9) == 0);
+
+        if (!isAdmin && is_write_cmd) {
+            printf("[nuk lejohet] vetem admin mund te perdore kete komande.\n");
+            continue;
+        }
+
+        
+        if (strncmp(line, "/upload ", 8) == 0) {
+            char filename[256];
+            if (sscanf(line, "/upload %255s", filename) != 1) {
+                printf("perdorimi: /upload <filename>\n");
+                continue;
+            }
+
+            FILE *file = fopen(filename, "r");
+            if (!file) {
+                printf("[gabim] file '%s' nuk ekziston lokalisht.\n", filename);
+                continue;
+            }
+
+            fseek(file, 0, SEEK_END);
+            long fsize = ftell(file);
+            rewind(file);
+
+            if (fsize > BUFFER_SIZE / 2) {
+                printf("[gabim] file shume i madh per tu derguar.\n");
+                fclose(file); continue;
+            }
+
+            char *content = malloc(fsize + 1);
+            if (!content) { fclose(file); continue; }
+            fread(content, 1, fsize, file);
+            content[fsize] = '\0';
+            fclose(file);
+
+            /* formati qe pret serveri: PRIORITY_HIGH|/upload <emri> <permbajtja> */
+            snprintf(full_request, BUFFER_SIZE, "PRIORITY_HIGH|/upload %s %s",
+                     filename, content);
+            free(content);
+
+            printf("[info] duke derguar '%s' (%ld bytes)...\n", filename, fsize);
+            komunikimi_baze(sockfd, servaddr, full_request);
+            continue;
+        }
+
+        
+        if (isAdmin)
+            snprintf(full_request, BUFFER_SIZE, "PRIORITY_HIGH|%s", line);
+        else
+            snprintf(full_request, BUFFER_SIZE, "PRIORITY_LOW|%s",  line);
+
+        komunikimi_baze(sockfd, servaddr, full_request);
+    }
+
+    free(full_request);
+}
