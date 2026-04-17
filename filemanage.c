@@ -22,3 +22,18 @@ void cmd_list(char *output, size_t outsz){
     if (output[0] == '\0') strncpy(output, "(ska file)", outsz - 1);
     output[outsz - 1] = '\0';
 }
+
+void cmd_read(const char *filename, char *output, size_t outsz){
+    char path[300];
+    snprintf(path, sizeof(path), "server_files/%s", filename);
+    FILE *f = fopen(path, "r");
+    if (!f){
+        strncpy(output, "[gabim] file nuk u gjet.", outsz - 1);
+        output[outsz - 1] = '\0';
+        return;
+    }
+
+    size_t n = fread(output, 1, outsz -1, f);
+    output[n] = '\0';
+    fclose(f);
+}
