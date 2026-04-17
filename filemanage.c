@@ -69,3 +69,24 @@ void cmd_search(const char *keyword, char *output, size_t outsz){
     if (output[0] == '\0') strncpy(output, "(nuk u gjeten rezultate)", outsz - 1);
     output[outsz - 1] = '\0';
 }
+
+void cmd_info(const char *filename, char *output, size_t outsz){
+    char path[300];
+    snprintf(path, sizeof(path), "server_files/%s", filename);
+    struct stat st;
+    if (stat(path, &st) !=0){
+        strncpy(output,"[gabim] file nuk u gjet.", outsz - 1);
+        output[outsz - 1] = '\0';
+        return;
+    }
+
+    char mtime_buf[64], ctime_buf[64];
+    strftime(mtime_buf, sizeof(mtime_buf), "%Y-%m-%d %H:%M:%S", localtime(&st.st_mtime));
+    strftime(ctime_buf, sizeof(ctime_buf), "%Y-%m-%d %H:%M:%S", localtime(&st.st_ctime));
+    snprintf(output,outz,
+    "emri:                %s\n"
+    "madhesia:            %ld bytes\n"
+    "modifikuar:          %s\n"
+    "metadata ndryshuar:  %s",
+    filename, (long)st.st_size, mtime_buf, ctime_buf);
+}
