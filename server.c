@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 
 #define UDP_PORT       9000
+#define SERVER_IP      "0.0.0.0"
 #define MAX_CLIENTS    4
 #define BUFFER_SIZE    1048576
 #define TIMEOUT_SEC    30
@@ -180,15 +181,15 @@ int main() {
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family      = AF_INET;
     server_addr.sin_port        = htons(UDP_PORT);
-    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
 
     if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("bind");
         return 1;
     }
 
-    printf("[server] udp po degjon ne port %d  (max %d klientet)\n",
-           UDP_PORT, MAX_CLIENTS);
+        printf("[server] udp po degjon ne %s:%d  (max %d klientet)\n",
+            SERVER_IP, UDP_PORT, MAX_CLIENTS);
 
     char *buffer = malloc(BUFFER_SIZE);
     if (!buffer) {
