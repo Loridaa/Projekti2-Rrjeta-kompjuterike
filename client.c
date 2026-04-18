@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <arpa/inet.h>
+#include "menu_ui.h"
 
 
 #define SERVER_IP   "127.0.0.1"
@@ -23,7 +24,8 @@ int krijo_socket() {
 }
 
 
-void komunikimi_baze(int sockfd, struct sockaddr_in servaddr, char *mesazhi) {
+void komunikimi_baze(int sockfd, struct sockaddr_in servaddr, const char *mesazhi,
+                     char *result, size_t resultsz) {
     char buffer[BUFFER_SIZE];
     unsigned int len = sizeof(servaddr);
 
@@ -32,7 +34,7 @@ void komunikimi_baze(int sockfd, struct sockaddr_in servaddr, char *mesazhi) {
 
     int n = recvfrom(sockfd, buffer, BUFFER_SIZE - 1, 0, NULL, NULL);
     if (n < 0) {
-        perror("[gabim] serveri nuk u pergjigj (timeout)");
+        snprintf(result, resultsz, "[gabim] serveri nuk u pergjigj (timeout)");
         return;
     }
     buffer[n] = '\0';
@@ -44,7 +46,7 @@ void komunikimi_baze(int sockfd, struct sockaddr_in servaddr, char *mesazhi) {
         char *content    = strtok(NULL, "");
 
         if (!filename || !content) {
-            printf("[gabim] formati i file-it nga serveri eshte i gabuar.\n");
+            snprintf(result, resultsz, "[gabim] formati i file-it nga serveri eshte i gabuar.");
             return;
         }
 
@@ -52,25 +54,42 @@ void komunikimi_baze(int sockfd, struct sockaddr_in servaddr, char *mesazhi) {
         snprintf(save_name, sizeof(save_name), "shkarkuar_%s", filename);
 
         FILE *f = fopen(save_name, "w");
-        if (!f) { perror("[gabim] nuk u krijua dot file lokal"); return; }
+        if (!f) {
+            snprintf(result, resultsz, "[gabim] nuk u krijua dot file lokal.");
+            return;
+        }
         fprintf(f, "%s", content);
         fclose(f);
-        printf("[ok] file u ruajt si '%s'\n", save_name);
+        snprintf(result, resultsz, "[ok] file u ruajt si '%s'", save_name);
 
     } else {
-        printf("[serveri]: %s\n", buffer);
+        snprintf(result, resultsz, "[serveri]: %s", buffer);
     }
+
+    result[resultsz - 1] = '\0';
 }
 
 
-void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin) {
+void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin,
+                     const char *initial_status) {
     char line[1024];
     char *full_request = malloc(BUFFER_SIZE);
-    if (!full_request) { printf("[gabim] malloc deshtoi\n"); return; }
+    char *last_result = malloc(BUFFER_SIZE);
+    if (!full_request || !last_result) {
+        printf("[gabim] malloc deshtoi\n");
+        free(full_request);
+        free(last_result);
+        return;
+    }
+
+    if (initial_status && initial_status[0] != '\0') {
+        snprintf(last_result, BUFFER_SIZE, "[serveri]: %s", initial_status);
+    } else {
+        last_result[0] = '\0';
+    }
 
     while (1) {
-        printf("\nmenu [%s]\n", isAdmin ? "admin" : "user");
-        printf("komanda (/help per ndihme): ");
+        ui_render_dashboard(SERVER_IP, PORT, isAdmin, last_result);
 
         if (fgets(line, sizeof(line), stdin) == NULL) break;
         line[strcspn(line, "\n")] = '\0';
@@ -80,17 +99,7 @@ void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin) {
         if (strcmp(line, "/exit") == 0) break;
 
         if (strcmp(line, "/help") == 0) {
-            printf("\nkomandat e disponueshme:\n");
-            printf("  /list                listoji file-t ne server\n");
-            printf("  /read   <filename>   lexo permbajtjen e nje file-i\n");
-            printf("  /search <fjala>      kerko file sipas emrit\n");
-            printf("  /info   <filename>   shfaq madhesine dhe datat e file-it\n");
-            if (isAdmin) {
-                printf("  /upload   <filename> dergo nje file ne server\n");
-                printf("  /download <filename> shkarko nje file nga serveri\n");
-                printf("  /delete   <filename> fshi nje file ne server\n");
-            }
-            printf("  /exit                shkepute nga serveri\n");
+            snprintf(last_result, BUFFER_SIZE, "[info] menu-ja eshte e shfaqur lart.");
             continue;
         }
 
@@ -100,7 +109,13 @@ void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin) {
                             strncmp(line, "/download", 9) == 0);
 
         if (!isAdmin && is_write_cmd) {
-            printf("[nuk lejohet] vetem admin mund te perdore kete komande.\n");
+            snprintf(last_result, BUFFER_SIZE,
+                     "[nuk lejohet] vetem admin mund te perdore kete komande.");
+            continue;
+        }
+
+        if (strcmp(line, "/upload") == 0) {
+            snprintf(last_result, BUFFER_SIZE, "perdorimi: /upload <filename>");
             continue;
         }
 
@@ -108,13 +123,14 @@ void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin) {
         if (strncmp(line, "/upload ", 8) == 0) {
             char filename[256];
             if (sscanf(line, "/upload %255s", filename) != 1) {
-                printf("perdorimi: /upload <filename>\n");
+                snprintf(last_result, BUFFER_SIZE, "perdorimi: /upload <filename>");
                 continue;
             }
 
             FILE *file = fopen(filename, "r");
             if (!file) {
-                printf("[gabim] file '%s' nuk ekziston lokalisht.\n", filename);
+                snprintf(last_result, BUFFER_SIZE,
+                         "[gabim] file '%s' nuk ekziston lokalisht.", filename);
                 continue;
             }
 
@@ -123,12 +139,18 @@ void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin) {
             rewind(file);
 
             if (fsize > BUFFER_SIZE / 2) {
-                printf("[gabim] file shume i madh per tu derguar.\n");
+                snprintf(last_result, BUFFER_SIZE,
+                         "[gabim] file shume i madh per tu derguar.");
                 fclose(file); continue;
             }
 
             char *content = malloc(fsize + 1);
-            if (!content) { fclose(file); continue; }
+            if (!content) {
+                fclose(file);
+                snprintf(last_result, BUFFER_SIZE,
+                         "[gabim] nuk ka memorie te mjaftueshme.");
+                continue;
+            }
             fread(content, 1, fsize, file);
             content[fsize] = '\0';
             fclose(file);
@@ -138,8 +160,8 @@ void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin) {
                      filename, content);
             free(content);
 
-            printf("[info] duke derguar '%s' (%ld bytes)...\n", filename, fsize);
-            komunikimi_baze(sockfd, servaddr, full_request);
+            komunikimi_baze(sockfd, servaddr, full_request,
+                            last_result, BUFFER_SIZE);
             continue;
         }
 
@@ -149,10 +171,13 @@ void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin) {
         else
             snprintf(full_request, BUFFER_SIZE, "PRIORITY_LOW|%s",  line);
 
-        komunikimi_baze(sockfd, servaddr, full_request);
+        komunikimi_baze(sockfd, servaddr, full_request,
+                        last_result, BUFFER_SIZE);
     }
 
+    ui_clear_screen();
     free(full_request);
+    free(last_result);
 }
 int main() {
     int sockfd = krijo_socket();
@@ -189,9 +214,8 @@ int main() {
         return 1;
     }
     ack[ack_n] = '\0';
-    printf("[serveri]: %s\n", ack);
 
-    menuja_klientit(sockfd, servaddr, (roli == 1));
+    menuja_klientit(sockfd, servaddr, (roli == 1), ack);
 
     close(sockfd);
     printf("[info] u shkepute nga serveri.\n");
