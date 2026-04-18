@@ -132,7 +132,7 @@ void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin) {
             content[fsize] = '\0';
             fclose(file);
 
-            /* formati qe pret serveri: PRIORITY_HIGH|/upload <emri> <permbajtja> */
+            
             snprintf(full_request, BUFFER_SIZE, "PRIORITY_HIGH|/upload %s %s",
                      filename, content);
             free(content);
@@ -152,4 +152,47 @@ void menuja_klientit(int sockfd, struct sockaddr_in servaddr, int isAdmin) {
     }
 
     free(full_request);
+}
+int main() {
+    int sockfd = krijo_socket();
+
+    struct sockaddr_in servaddr;
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family      = AF_INET;
+    servaddr.sin_port        = htons(PORT);
+    servaddr.sin_addr.s_addr = inet_addr(SERVER_IP);
+
+    printf("klienti udp  ->  %s:%d\n", SERVER_IP, PORT);
+
+    int roli;
+    printf("zgjidh rolin  (1 = admin,  2 = user): ");
+    if (scanf("%d", &roli) != 1) {
+        printf("[gabim] input i pavlefshem.\n");
+        close(sockfd); return 1;
+    }
+    getchar();
+
+
+    char init_msg[64];
+    snprintf(init_msg, sizeof(init_msg), "%s",
+             (roli == 1) ? "admin123" : "user_connect");
+    sendto(sockfd, init_msg, strlen(init_msg), 0,
+           (struct sockaddr *)&servaddr, sizeof(servaddr));
+
+  
+    char ack[256] = {0};
+    int ack_n = recvfrom(sockfd, ack, sizeof(ack)-1, 0, NULL, NULL);
+    if (ack_n < 0) {
+        perror("[gabim] serveri nuk u pergjigj ne lidhjen fillestare");
+        close(sockfd);
+        return 1;
+    }
+    ack[ack_n] = '\0';
+    printf("[serveri]: %s\n", ack);
+
+    menuja_klientit(sockfd, servaddr, (roli == 1));
+
+    close(sockfd);
+    printf("[info] u shkepute nga serveri.\n");
+    return 0;
 }
