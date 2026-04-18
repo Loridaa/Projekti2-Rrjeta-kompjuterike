@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <dirent.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -43,7 +44,7 @@ void cmd_delete(const char *filename, char *output, size_t outsz){
     snprintf(path, sizeof(path), "server_files/%s", filename);
     if(remove(path) == 0)
     strncpy(output, "[ok] file u fshi.",outsz - 1);
-    elsestrncpy(output, "[gabim] nuk u fshi dot file.", outsz - 1);
+    else strncpy(output, "[gabim] nuk u fshi dot file.", outsz - 1);
     output[outsz - 1] = '\0';
 }
 
@@ -59,7 +60,7 @@ void cmd_search(const char *keyword, char *output, size_t outsz){
     output[0] = '\0';
     while ((entry = readdir(d)) !=NULL){
         if (entry->d_name[0] == '.') continue;
-        if(strst(entry->d_name, keyword)) {
+        if(strstr(entry->d_name, keyword)) {
             strncat(output, entry->d_name, outsz - strlen(output) - 2);
             strncat(output, "\n", outsz - strlen(output) - 1);
         }
@@ -118,10 +119,19 @@ void cmd_download(const char *filename, char *output, size_t outsz){
         return;
     }
 
-    char content[BUFFER_SIZE - 300];
-    size_t n = fread(content, 1, sizeof(content) - 1, f);
+    size_t capacity = BUFFER_SIZE - 300;
+    char *content = malloc(capacity);
+    if (!content) {
+        fclose(f);
+        strncpy(output, "[gabim] nuk ka memorie te mjaftueshme.", outsz - 1);
+        output[outsz - 1] = '\0';
+        return;
+    }
+
+    size_t n = fread(content, 1, capacity - 1, f);
     content[n] = '\0';
     fclose(f);
     snprintf(output, outsz, "FILE_DATA:%s:%s", filename,content);
+    free(content);
     
 }

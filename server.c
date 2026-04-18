@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -97,7 +98,14 @@ void remove_inactive_clients() {
  */
 void process_request(int sockfd, struct sockaddr_in *client_addr,
                      socklen_t addr_len, char *buffer, int is_admin) {
-    char response[BUFFER_SIZE];
+    const size_t response_cap = BUFFER_SIZE;
+    char *response = malloc(response_cap);
+    if (!response) {
+        const char *msg = "[server] gabim memorie.";
+        sendto(sockfd, msg, strlen(msg), 0,
+               (struct sockaddr *)client_addr, addr_len);
+        return;
+    }
     response[0] = '\0';
 
     char *cmd = buffer;
@@ -105,48 +113,49 @@ void process_request(int sockfd, struct sockaddr_in *client_addr,
     else if (strncmp(buffer, "PRIORITY_LOW|",  13) == 0) cmd = buffer + 13;
 
     if (strcmp(cmd, "/list") == 0) {
-        cmd_list(response, sizeof(response));
+        cmd_list(response, response_cap);
 
     } else if (strncmp(cmd, "/read ", 6) == 0) {
-        cmd_read(cmd + 6, response, sizeof(response));
+        cmd_read(cmd + 6, response, response_cap);
 
     } else if (strncmp(cmd, "/delete ", 8) == 0) {
-        if (!is_admin) strncpy(response, "[nuk lejohet] vetem admin.", sizeof(response)-1);
-        else           cmd_delete(cmd + 8, response, sizeof(response));
+        if (!is_admin) strncpy(response, "[nuk lejohet] vetem admin.", response_cap - 1);
+        else           cmd_delete(cmd + 8, response, response_cap);
 
     } else if (strncmp(cmd, "/search ", 8) == 0) {
-        cmd_search(cmd + 8, response, sizeof(response));
+        cmd_search(cmd + 8, response, response_cap);
 
     } else if (strncmp(cmd, "/info ", 6) == 0) {
-        cmd_info(cmd + 6, response, sizeof(response));
+        cmd_info(cmd + 6, response, response_cap);
 
     } else if (strncmp(cmd, "/download ", 10) == 0) {
-        if (!is_admin) strncpy(response, "[nuk lejohet] vetem admin.", sizeof(response)-1);
-        else           cmd_download(cmd + 10, response, sizeof(response));
+        if (!is_admin) strncpy(response, "[nuk lejohet] vetem admin.", response_cap - 1);
+        else           cmd_download(cmd + 10, response, response_cap);
 
     } else if (strncmp(cmd, "/upload ", 8) == 0) {
         if (!is_admin) {
-            strncpy(response, "[nuk lejohet] vetem admin.", sizeof(response)-1);
+            strncpy(response, "[nuk lejohet] vetem admin.", response_cap - 1);
         } else {
             char filename[256];
             if (sscanf(cmd + 8, "%255s", filename) == 1) {
                 size_t offset = 8 + strlen(filename);
                 if (cmd[offset] == ' ' && cmd[offset + 1] != '\0') {
-                    cmd_upload(filename, cmd + offset + 1, response, sizeof(response));
+                    cmd_upload(filename, cmd + offset + 1, response, response_cap);
                 } else {
-                    strncpy(response, "[gabim] permbajtja e file-it mungon.", sizeof(response)-1);
+                    strncpy(response, "[gabim] permbajtja e file-it mungon.", response_cap - 1);
                 }
             } else {
-                strncpy(response, "[gabim] perdorimi: /upload <filename> <content>", sizeof(response)-1);
+                strncpy(response, "[gabim] perdorimi: /upload <filename> <content>", response_cap - 1);
             }
         }
     } else {
-        snprintf(response, sizeof(response), "[server] mesazhi u mor: %s", cmd);
+        snprintf(response, response_cap, "[server] mesazhi u mor: %s", cmd);
     }
 
-    response[sizeof(response) - 1] = '\0';
-    sendto(sockfd, response, strlen(response), 0,
-           (struct sockaddr *)client_addr, addr_len);
+    response[response_cap - 1] = '\0';
+        sendto(sockfd, response, strlen(response), 0,
+            (struct sockaddr *)client_addr, addr_len);
+        free(response);
 }
 
 /*
@@ -181,7 +190,12 @@ int main() {
     printf("[server] udp po degjon ne port %d  (max %d klientet)\n",
            UDP_PORT, MAX_CLIENTS);
 
-    char buffer[BUFFER_SIZE];
+    char *buffer = malloc(BUFFER_SIZE);
+    if (!buffer) {
+        perror("malloc");
+        close(sockfd);
+        return 1;
+    }
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
 
@@ -251,6 +265,7 @@ int main() {
         process_request(sockfd, &client_addr, addr_len, buffer, is_admin);
     }
 
+    free(buffer);
     close(sockfd);
     return 0;
 }

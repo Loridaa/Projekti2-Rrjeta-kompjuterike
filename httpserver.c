@@ -1,11 +1,10 @@
 #include <stdio.h>
 #include <string.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <pthread.h>
 #include <time.h>
-
-#pragma comment(lib, "ws2_32.lib")
+#include <unistd.h>
 
 #define HTTP_PORT 8081
 #define MAX_CLIENTS 4
@@ -51,21 +50,14 @@ static void escape_json(const char *input, char *output, size_t outsz){
 void *http_server(void *arg){
     (void)arg;
 
-    WSADATA wsa;
-    if(WSAStartup(MAKEWORD(2, 2), &wsa) != 0){
-        printf("[http] WSAStartup deshtoi\n");
-        return NULL;
-    }
-
-    SOCKET http_sock = socket(AF_INET, SOCK_STREAM, 0);
-    if(http_sock == INVALID_SOCKET){
+    int http_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if(http_sock < 0){
         printf("[http] socket deshtoi\n");
-        WSACleanup();
         return NULL;
     } 
 
-    BOOL opt = 1;
-    setsockopt(http_sock, SOL_SOCKET, SO_REUSEADDR, (const char *)&opt, sizeof(opt));
+    int opt = 1;
+    setsockopt(http_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -73,30 +65,28 @@ void *http_server(void *arg){
     addr.sin_port = htons(HTTP_PORT);
     addr.sin_addr.s_addr = INADDR_ANY;
 
-    if(bind(http_sock, (struct sockaddr *)&addr, sizeof(addr)) == SOCKET_ERROR){
+    if(bind(http_sock, (struct sockaddr *)&addr, sizeof(addr)) < 0){
         printf("[http] bind deshtoi\n");
-        closesocket(http_sock);
-        WSACleanup();
+        close(http_sock);
         return NULL;
     }
 
-    if(listen(http_sock, 5) == SOCKET_ERROR){
+    if(listen(http_sock, 5) < 0){
         printf("[http] listen deshtoi\n");
-        closesocket(http_sock);
-        WSACleanup();
+        close(http_sock);
         return NULL;    
     }
 
     printf("[http] serveri i statistikave aktiv ne port %d -> GET /stats\n", HTTP_PORT);
 
     while(1){
-        SOCKET client = accept(http_sock, NULL, NULL);
-        if(client == INVALID_SOCKET) continue;
+        int client = accept(http_sock, NULL, NULL);
+        if(client < 0) continue;
 
         char req[1024] = {0};
         int received = recv(client, req, sizeof(req) - 1, 0);
         if(received <= 0){
-            closesocket(client);
+            close(client);
             continue;
         }
         req[received] = '\0';
@@ -108,8 +98,8 @@ void *http_server(void *arg){
                 "Connection: close\r\n\r\n"
                 "404 endpoint nuk ekziston. perdor GET /stats";
             
-            send(client, not_found, (int)strlen(not_found), 0);
-            closesocket(client);
+            send(client, not_found, strlen(not_found), 0);
+            close(client);
             continue;
         }
 
@@ -153,10 +143,9 @@ void *http_server(void *arg){
                 "Connection: close\r\n\r\n%s", body
         );
 
-        send(client, response, (int)strlen(response), 0);
-        closesocket(client);
+        send(client, response, strlen(response), 0);
+        close(client);
     }
-    closesocket(http_sock);
-    WSACleanup();
+    close(http_sock);
     return NULL;
 }
