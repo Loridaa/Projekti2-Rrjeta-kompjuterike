@@ -5,6 +5,8 @@
 #include <pthread.h>
 #include <time.h>
 #include <stddef.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #define UDP_PORT       9000
 #define MAX_CLIENTS    4
@@ -145,4 +147,110 @@ void process_request(int sockfd, struct sockaddr_in *client_addr,
     response[sizeof(response) - 1] = '\0';
     sendto(sockfd, response, strlen(response), 0,
            (struct sockaddr *)client_addr, addr_len);
+}
+
+/*
+ *  main starton dy pjese:
+ * 1) thread-in paralel te HTTP
+ * 2) loop-in kryesor UDP
+ */
+int main() {
+    mkdir("server_files", 0755);
+
+    pthread_t http_thread;
+    pthread_create(&http_thread, NULL, http_server, NULL);
+    pthread_detach(http_thread);
+
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) { perror("socket"); return 1; }
+
+    int opt = 1;
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family      = AF_INET;
+    server_addr.sin_port        = htons(UDP_PORT);
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("bind");
+        return 1;
+    }
+
+    printf("[server] udp po degjon ne port %d  (max %d klientet)\n",
+           UDP_PORT, MAX_CLIENTS);
+
+    char buffer[BUFFER_SIZE];
+    struct sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+
+    while (1) {
+        int n = recvfrom(sockfd, buffer, BUFFER_SIZE - 1, 0,
+                         (struct sockaddr *)&client_addr, &addr_len);
+        if (n < 0) continue;
+        buffer[n] = '\0';
+
+        remove_inactive_clients();
+
+        pthread_mutex_lock(&clients_mutex);
+        int idx = find_client(&client_addr);
+
+        /*
+         * nese klienti eshte i ri, e regjistrojme si admin ose user.
+         * nese serveri eshte plot, lidhja refuzohet.
+         */
+        if (idx == -1) {
+            if (client_count >= MAX_CLIENTS) {
+                const char *msg = "[server] serveri eshte plot. provoni me vone.";
+                sendto(sockfd, msg, strlen(msg), 0,
+                       (struct sockaddr *)&client_addr, addr_len);
+                pthread_mutex_unlock(&clients_mutex);
+                continue;
+            }
+
+            int is_admin = (strcmp(buffer, ADMIN_PASSWORD) == 0);
+            add_client(client_addr, is_admin);
+            idx = client_count - 1;
+
+            const char *ack = is_admin
+                ? "[server] u lidhet si admin."
+                : "[server] u lidhet si user.";
+            sendto(sockfd, ack, strlen(ack), 0,
+                   (struct sockaddr *)&client_addr, addr_len);
+            pthread_mutex_unlock(&clients_mutex);
+            continue;
+        }
+
+        clients[idx].last_active = time(NULL);
+        int is_admin = clients[idx].is_admin;
+        pthread_mutex_unlock(&clients_mutex);
+
+        /*
+         * ruajme mesazhin ne log per monitorim
+         */
+        pthread_mutex_lock(&msg_mutex);
+        if (message_count < 200) {
+            char ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &client_addr.sin_addr, ip, sizeof(ip));
+            char trunc[460];
+            strncpy(trunc, buffer, sizeof(trunc)-1);
+            trunc[sizeof(trunc)-1] = '\0';
+            snprintf(messages[message_count++], 512, "[%s]: %s", ip, trunc);
+        }
+        pthread_mutex_unlock(&msg_mutex);
+
+        printf("[udp] nga %s: %s\n", clients[idx].ip, buffer);
+
+        /*
+             user-at e zakonshem
+         * marrin nje vonese te vogel, kurse admin trajtohet menjehere.
+         */
+        if (!is_admin) usleep(50000);
+
+        process_request(sockfd, &client_addr, addr_len, buffer, is_admin);
+    }
+
+    close(sockfd);
+    return 0;
 }
