@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -87,4 +88,61 @@ void remove_inactive_clients() {
         }
     }
     pthread_mutex_unlock(&clients_mutex);
+}
+
+/*
+ * merret me procesimin e nje kerkese te vetme nga klienti.
+ */
+void process_request(int sockfd, struct sockaddr_in *client_addr,
+                     socklen_t addr_len, char *buffer, int is_admin) {
+    char response[BUFFER_SIZE];
+    response[0] = '\0';
+
+    char *cmd = buffer;
+    if      (strncmp(buffer, "PRIORITY_HIGH|", 14) == 0) cmd = buffer + 14;
+    else if (strncmp(buffer, "PRIORITY_LOW|",  13) == 0) cmd = buffer + 13;
+
+    if (strcmp(cmd, "/list") == 0) {
+        cmd_list(response, sizeof(response));
+
+    } else if (strncmp(cmd, "/read ", 6) == 0) {
+        cmd_read(cmd + 6, response, sizeof(response));
+
+    } else if (strncmp(cmd, "/delete ", 8) == 0) {
+        if (!is_admin) strncpy(response, "[nuk lejohet] vetem admin.", sizeof(response)-1);
+        else           cmd_delete(cmd + 8, response, sizeof(response));
+
+    } else if (strncmp(cmd, "/search ", 8) == 0) {
+        cmd_search(cmd + 8, response, sizeof(response));
+
+    } else if (strncmp(cmd, "/info ", 6) == 0) {
+        cmd_info(cmd + 6, response, sizeof(response));
+
+    } else if (strncmp(cmd, "/download ", 10) == 0) {
+        if (!is_admin) strncpy(response, "[nuk lejohet] vetem admin.", sizeof(response)-1);
+        else           cmd_download(cmd + 10, response, sizeof(response));
+
+    } else if (strncmp(cmd, "/upload ", 8) == 0) {
+        if (!is_admin) {
+            strncpy(response, "[nuk lejohet] vetem admin.", sizeof(response)-1);
+        } else {
+            char filename[256];
+            if (sscanf(cmd + 8, "%255s", filename) == 1) {
+                size_t offset = 8 + strlen(filename);
+                if (cmd[offset] == ' ' && cmd[offset + 1] != '\0') {
+                    cmd_upload(filename, cmd + offset + 1, response, sizeof(response));
+                } else {
+                    strncpy(response, "[gabim] permbajtja e file-it mungon.", sizeof(response)-1);
+                }
+            } else {
+                strncpy(response, "[gabim] perdorimi: /upload <filename> <content>", sizeof(response)-1);
+            }
+        }
+    } else {
+        snprintf(response, sizeof(response), "[server] mesazhi u mor: %s", cmd);
+    }
+
+    response[sizeof(response) - 1] = '\0';
+    sendto(sockfd, response, strlen(response), 0,
+           (struct sockaddr *)client_addr, addr_len);
 }
