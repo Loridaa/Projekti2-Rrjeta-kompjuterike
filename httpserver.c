@@ -17,7 +17,7 @@ typedef struct{
     char ip[INET_ADDRSTRLEN];
 } Client;
 
-extern Client client[MAX_CLIENTS];
+extern Client clients[MAX_CLIENTS];
 extern int client_count;
 extern pthread_mutex_t clients_mutex;
 
@@ -85,13 +85,38 @@ void *http_server(void *arg){
             continue;
         }
 
-        const char *ok_response = 
-            "HTTP/1.1 200 OK\r\n"
-            "Cntent-Type: text/plain\r\n"
-            "Connection: close\r\n\r\n"
-            "Endpoint /stats funksionon.";
+        char body[65536];
 
-        send(client, ok_response, (int)strlen(ok_response), 0);
+        pthread_mutex_lock(&clients_mutex);
+        pthread_mutex_lock(&msg_mutex);
+
+        int pos = snprintf(body, sizeof(body),
+            "{\n}"
+            "  \"klinetet_aktiv\": %d, \n"
+            "  \"max_klientet\": %d,\n"
+            "  \"numri_mesazheve\": %d,\n"
+            "  \"ip_adresat\": [",
+            client_count, MAX_CLIENTS, message_count
+        );
+
+        for(int i = 0; i < client_count && pos < (int)sizeof(body); i++){
+            pos += snprintf(body + pos, sizeof(body) - (size_t)pos,
+                            "%s\"%s\"", (i ? ", " : ""), clients[i].ip); 
+        }
+
+        snprintf(body + pos, sizeof(body) - (size_t)pos, "]\n}");
+
+        pthread_mutex_unlock(&msg_mutex);
+        pthread_mutex_unlock(&clients_mutex);
+
+        char response[70000];
+        sprintf(response, sizeof(response),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: application/json\r\n"
+                "Connection: close\r\n\r\n%s, body"
+        );
+
+        send(client, response, (int)strlen(response), 0);
         closesocket(client);
     }
     closesocket(http_sock);
