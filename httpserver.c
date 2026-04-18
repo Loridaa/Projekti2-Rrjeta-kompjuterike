@@ -25,6 +25,29 @@ extern char messages[200][512];
 extern int message_count;
 extern pthread_mutex_t msg_mutex;
 
+static void escape_json(const char *input, char *output, size_t outsz){
+    size_t j = 0;
+    for(size_t i = 0; input[i] && j + 3 < outsz; i++){
+        char c = input[i];
+        if(c == '"' || c == '\\'){
+            output[j++] = '\\';
+            output[j++] = c;
+        }else if(c == '\n'){
+            output[j++] = '\\';
+            output[j++] = 'n';
+        }else if(c == '\r'){
+            output[j++] = '\\';
+            output[j++] = 'r';
+        }else if(c == '\t'){
+            output[j++] = '\\';
+            output[j++] = 't';
+        }else{
+            output[j++] = c;
+        }
+    }
+    output[j] = '\0';
+}
+
 void *http_server(void *arg){
     (void)arg;
 
@@ -64,14 +87,19 @@ void *http_server(void *arg){
         return NULL;    
     }
 
-    printf("[http] serveri i statistikave aktiv ne port %d -> GET /stats\n");
+    printf("[http] serveri i statistikave aktiv ne port %d -> GET /stats\n", HTTP_PORT);
 
     while(1){
         SOCKET client = accept(http_sock, NULL, NULL);
         if(client == INVALID_SOCKET) continue;
 
         char req[1024] = {0};
-        recv(client, req, sizeof(req) - 1, 0);
+        int received = recv(client, req, sizeof(req) - 1, 0);
+        if(received <= 0){
+            closesocket(client);
+            continue;
+        }
+        req[received] = '\0';
 
         if(strncmp(req, "GET /stats", 10) != 0){
             const char *not_found = 
@@ -91,8 +119,8 @@ void *http_server(void *arg){
         pthread_mutex_lock(&msg_mutex);
 
         int pos = snprintf(body, sizeof(body),
-            "{\n}"
-            "  \"klinetet_aktiv\": %d, \n"
+            "{\n"
+            "  \"klientet_aktiv\": %d, \n"
             "  \"max_klientet\": %d,\n"
             "  \"numri_mesazheve\": %d,\n"
             "  \"ip_adresat\": [",
@@ -104,16 +132,25 @@ void *http_server(void *arg){
                             "%s\"%s\"", (i ? ", " : ""), clients[i].ip); 
         }
 
+        pos += snprintf(body + pos, sizeof(body) - (size_t)pos, "],\n  \"mesazhet\": [");
+
+        for (int i = 0; i < message_count && pos < (int)sizeof(body); i++) {
+            char escaped[1024];
+            escape_json(messages[i], escaped, sizeof(escaped));
+            pos += snprintf(body + pos, sizeof(body) - (size_t)pos,
+                            "%s\"%s\"", (i ? ", " : ""), escaped);
+        }
+
         snprintf(body + pos, sizeof(body) - (size_t)pos, "]\n}");
 
         pthread_mutex_unlock(&msg_mutex);
         pthread_mutex_unlock(&clients_mutex);
 
         char response[70000];
-        sprintf(response, sizeof(response),
+        snprintf(response, sizeof(response),
                 "HTTP/1.1 200 OK\r\n"
                 "Content-Type: application/json\r\n"
-                "Connection: close\r\n\r\n%s, body"
+                "Connection: close\r\n\r\n%s", body
         );
 
         send(client, response, (int)strlen(response), 0);
